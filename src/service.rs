@@ -298,7 +298,7 @@ impl Service {
                     config: config.clone(),
                 };
 
-                info!("::public_address::Discv5 Service started");
+                info!(":public_address: Discv5 Service started");
                 service.start().await;
             }));
 
