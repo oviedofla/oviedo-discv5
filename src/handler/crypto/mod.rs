@@ -19,8 +19,7 @@ use enr::{
     k256::{
         self,
         ecdsa::{
-            digest::Update,
-            signature::{DigestSigner, DigestVerifier, Signature as _},
+            signature::{DigestSigner, DigestVerifier},
             Signature,
         },
         sha2::{Digest, Sha256},
@@ -53,10 +52,10 @@ pub(crate) fn generate_session_keys(
     let (secret, ephem_pk) = {
         match contact.public_key() {
             CombinedPublicKey::Secp256k1(remote_pk) => {
-                let ephem_sk = k256::ecdsa::SigningKey::random(rand::thread_rng());
+                let ephem_sk = k256::ecdsa::SigningKey::random(&mut rand::thread_rng());
                 let secret = ecdh(&remote_pk, &ephem_sk);
                 let ephem_pk = ephem_sk.verifying_key();
-                (secret, ephem_pk.to_bytes().to_vec())
+                (secret, ephem_pk.to_sec1_bytes().to_vec())
             }
             CombinedPublicKey::Ed25519(_) => {
                 return Err(Discv5Error::KeyTypeNotSupported("Ed25519"))
@@ -133,11 +132,11 @@ pub(crate) fn sign_nonce(
 
     match signing_key {
         CombinedKey::Secp256k1(key) => {
-            let message = Sha256::new().chain(signing_message);
+            let message = Sha256::new().chain_update(signing_message);
             let signature: Signature = key
                 .try_sign_digest(message)
-                .map_err(|e| Discv5Error::Error(format!("Failed to sign message: {}", e)))?;
-            Ok(signature.as_bytes().to_vec())
+                .map_err(|e| Discv5Error::Error(format!("Failed to sign message: {e}")))?;
+            Ok(signature.to_vec())
         }
         CombinedKey::Ed25519(_) => Err(Discv5Error::KeyTypeNotSupported("Ed25519")),
     }
@@ -157,7 +156,7 @@ pub(crate) fn verify_authentication_nonce(
         CombinedPublicKey::Secp256k1(key) => {
             if let Ok(sig) = k256::ecdsa::Signature::try_from(sig) {
                 return key
-                    .verify_digest(Sha256::new().chain(signing_nonce), &sig)
+                    .verify_digest(Sha256::new().chain_update(signing_nonce), &sig)
                     .is_ok();
             }
             false
@@ -223,6 +222,8 @@ pub(crate) fn encrypt_message(
 
 #[cfg(test)]
 mod tests {
+    use crate::packet::DefaultProtocolId;
+
     use super::*;
     use enr::{CombinedKey, EnrBuilder, EnrKey};
     use std::convert::TryInto;
@@ -260,7 +261,7 @@ mod tests {
                 .unwrap();
 
         let remote_pk = k256::ecdsa::VerifyingKey::from_sec1_bytes(&remote_pubkey).unwrap();
-        let local_sk = k256::ecdsa::SigningKey::from_bytes(&local_secret_key).unwrap();
+        let local_sk = k256::ecdsa::SigningKey::from_slice(&local_secret_key).unwrap();
 
         let secret = ecdh(&remote_pk, &local_sk);
         assert_eq!(secret, expected_secret);
@@ -276,7 +277,7 @@ mod tests {
                 .unwrap();
 
         let remote_pk = k256::ecdsa::VerifyingKey::from_sec1_bytes(&dest_pubkey).unwrap();
-        let local_sk = k256::ecdsa::SigningKey::from_bytes(&ephem_key).unwrap();
+        let local_sk = k256::ecdsa::SigningKey::from_slice(&ephem_key).unwrap();
 
         let secret = ecdh(&remote_pk, &local_sk);
 
@@ -305,12 +306,12 @@ mod tests {
                 .unwrap();
         let dst_id: NodeId = node_key_2().public().into();
 
-        println!("{}", dst_id);
+        println!("{dst_id}");
 
         let expected_sig = hex::decode("94852a1e2318c4e5e9d422c98eaf19d1d90d876b29cd06ca7cb7546d0fff7b484fe86c09a064fe72bdbef73ba8e9c34df0cd2b53e9d65528c2c7f336d5dfc6e6").unwrap();
 
         let challenge_data = ChallengeData::try_from(hex::decode("000000000000000000000000000000006469736376350001010102030405060708090a0b0c00180102030405060708090a0b0c0d0e0f100000000000000000").unwrap().as_slice()).unwrap();
-        let key = k256::ecdsa::SigningKey::from_bytes(&local_secret_key).unwrap();
+        let key = k256::ecdsa::SigningKey::from_slice(&local_secret_key).unwrap();
         let sig = sign_nonce(&key.into(), &challenge_data, &ephemeral_pubkey, &dst_id).unwrap();
 
         assert_eq!(sig, expected_sig);
@@ -394,7 +395,8 @@ mod tests {
         let dst_id: NodeId = node_key_2().public().into();
         let encoded_ref_packet = hex::decode("00000000000000000000000000000000088b3d4342774649325f313964a39e55ea96c005ad52be8c7560413a7008f16c9e6d2f43bbea8814a546b7409ce783d34c4f53245d08dab84102ed931f66d1492acb308fa1c6715b9d139b81acbdcc").unwrap();
         let (_packet, auth_data) =
-            crate::packet::Packet::decode(&dst_id, &encoded_ref_packet).unwrap();
+            crate::packet::Packet::decode::<DefaultProtocolId>(&dst_id, &encoded_ref_packet)
+                .unwrap();
 
         let ciphertext = hex::decode("b84102ed931f66d1492acb308fa1c6715b9d139b81acbdcc").unwrap();
         let read_key = hex::decode("00000000000000000000000000000000").unwrap();
@@ -409,6 +411,6 @@ mod tests {
         dbg!(hex::encode(&message));
         let rpc = crate::rpc::Message::decode(&message).unwrap();
 
-        println!("{}", rpc);
+        println!("{rpc}");
     }
 }

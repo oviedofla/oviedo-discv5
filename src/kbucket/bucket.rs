@@ -653,7 +653,7 @@ where
     ///
     /// Returns `None` if the given key does not refer to an node in the
     /// bucket.
-    fn get_mut(&mut self, key: &Key<TNodeId>) -> Option<&mut Node<TNodeId, TVal>> {
+    pub fn get_mut(&mut self, key: &Key<TNodeId>) -> Option<&mut Node<TNodeId, TVal>> {
         self.nodes.iter_mut().find(move |p| &p.key == key)
     }
 
@@ -1084,7 +1084,7 @@ pub mod tests {
 
             // Apply the pending node.
             let pending = bucket.pending_mut().expect("No pending node.");
-            pending.set_ready_at(Instant::now() - Duration::from_secs(1));
+            pending.set_ready_at(Instant::now().checked_sub(Duration::from_secs(1)).unwrap());
             let result = bucket.apply_pending();
             assert_eq!(
                 result,
@@ -1210,7 +1210,7 @@ pub mod tests {
 
         // Speed up the pending time
         if let Some(pending) = bucket.pending.as_mut() {
-            pending.replace = Instant::now() - Duration::from_secs(1);
+            pending.replace = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
         }
 
         // At some later time apply pending

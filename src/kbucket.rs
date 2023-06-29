@@ -104,42 +104,42 @@ impl<TNodeId, TVal> AsRef<Key<TNodeId>> for ClosestValue<TNodeId, TVal> {
 
 /// A key that can be returned from the `closest_keys` function, which indicates if the key matches the
 /// predicate or not.
-pub struct PredicateKey<TNodeId: Clone> {
+pub struct PredicateKey<TNodeId> {
     pub key: Key<TNodeId>,
     pub predicate_match: bool,
 }
 
-impl<TNodeId: Clone> From<PredicateKey<TNodeId>> for Key<TNodeId> {
+impl<TNodeId> From<PredicateKey<TNodeId>> for Key<TNodeId> {
     fn from(key: PredicateKey<TNodeId>) -> Self {
         key.key
     }
 }
 
-impl<TNodeId: Clone, TVal> From<PredicateValue<TNodeId, TVal>> for PredicateKey<TNodeId> {
-    fn from(value: PredicateValue<TNodeId, TVal>) -> Self {
-        PredicateKey {
-            key: value.key,
-            predicate_match: value.predicate_match,
-        }
-    }
-}
-
 /// A value being returned from a predicate closest iterator.
-pub struct PredicateValue<TNodeId: Clone, TVal> {
+pub struct PredicateValue<TNodeId, TVal> {
     pub key: Key<TNodeId>,
     pub predicate_match: bool,
     pub value: TVal,
 }
 
-impl<TNodeId: Clone, TVal> AsRef<Key<TNodeId>> for PredicateValue<TNodeId, TVal> {
+impl<TNodeId, TVal> AsRef<Key<TNodeId>> for PredicateValue<TNodeId, TVal> {
     fn as_ref(&self) -> &Key<TNodeId> {
         &self.key
     }
 }
 
-impl<TNodeId: Clone, TVal> From<PredicateValue<TNodeId, TVal>> for Key<TNodeId> {
-    fn from(key: PredicateValue<TNodeId, TVal>) -> Self {
-        key.key
+impl<TNodeId, TVal> PredicateValue<TNodeId, TVal> {
+    pub fn to_key_value(self) -> (PredicateKey<TNodeId>, TVal) {
+        let PredicateValue {
+            key,
+            predicate_match,
+            value,
+        } = self;
+        let key = PredicateKey {
+            key,
+            predicate_match,
+        };
+        (key, value)
     }
 }
 
@@ -1050,7 +1050,7 @@ mod tests {
 
         // Expire the timeout for the pending entry on the full bucket.`
         let full_bucket = &mut table.buckets[full_bucket_index.unwrap().get()];
-        let elapsed = Instant::now() - Duration::from_secs(1);
+        let elapsed = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
         full_bucket.pending_mut().unwrap().set_ready_at(elapsed);
 
         match table.entry(&expected_applied.inserted) {
